@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, PieChart, Pie, Cell, RadialBarChart, RadialBar } from 'recharts';
+import { BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell, RadialBarChart, RadialBar } from 'recharts';
+import Head from 'next/head'
 
 export default function Home() {
     const [selectedFile, setSelectedFile] = useState(null);
@@ -103,6 +104,11 @@ export default function Home() {
         : 'min-h-screen dashboard-bg-light text-slate-900';
 
     return (
+        <>
+        <Head>
+            <title>Mood Lens</title>
+            <link rel="icon" href="/network-detection.svg" />
+        </Head>
         <div className={themeClasses}>
             {/* Banner Header */}
             <div className={`relative overflow-hidden ${darkMode ? 'banner-bg-dark' : 'banner-bg-light'}`}>
@@ -365,7 +371,7 @@ export default function Home() {
                         </div>
 
                         <div className="mt-8">
-                            <p className="text-2xl font-bold text-gradient-primary text-center">
+                            <p className="text-2xl font-bold text-gradient-warm text-center">
                                 {showTips ? "Ready to analyze with confidence" : "Unlock the power of facial insights"}
                             </p>
                         </div>
@@ -606,7 +612,7 @@ export default function Home() {
                                                                         emoji = value.value ? '😊' : '😐';
                                                                         break;
                                                                     case 'eyeglasses':
-                                                                        emoji = value.value ? '🕶️' : '👓';
+                                                                        emoji = value.value ? '👓' : '😶';
                                                                         break;
                                                                     case 'sunglasses':
                                                                         emoji = value.value ? '😎' : '😶';
@@ -697,5 +703,7 @@ export default function Home() {
                 </footer>
             </div>
         </div>
+        </>
     );
+
 }
