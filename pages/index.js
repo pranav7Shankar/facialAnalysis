@@ -10,6 +10,9 @@ export default function Home() {
     const [error, setError] = useState(null);
     const [darkMode, setDarkMode] = useState(false);
     const [showTips, setShowTips] = useState(false);
+    const [toastMessage, setToastMessage] = useState('');
+    const [showToast, setShowToast] = useState(false);
+    const [pushEnabled, setPushEnabled] = useState(false);
     const [stats, setStats] = useState({
         totalAnalyses: 2847,
         accuracyRate: 96.2,
@@ -29,6 +32,66 @@ export default function Home() {
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
     }, [darkMode]);
+
+    // Ask for Notification permission on mount (best-effort)
+    useEffect(() => {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+            if (Notification.permission === 'default') {
+                Notification.requestPermission().catch(() => {});
+            }
+        }
+    }, []);
+
+    // Register service worker (best-effort)
+    useEffect(() => {
+        if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(() => {});
+        }
+    }, []);
+
+    const urlBase64ToUint8Array = (base64String) => {
+        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const rawData = typeof window !== 'undefined' ? window.atob(base64) : '';
+        const outputArray = new Uint8Array(rawData.length);
+        for (let i = 0; i < rawData.length; ++i) {
+            outputArray[i] = rawData.charCodeAt(i);
+        }
+        return outputArray;
+    };
+
+    const enablePush = async () => {
+        try {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                setError('Push not supported in this browser');
+                return;
+            }
+
+            const registration = await navigator.serviceWorker.ready;
+            const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+            if (!publicKey) {
+                setError('Missing VAPID public key');
+                return;
+            }
+            const subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(publicKey)
+            });
+
+            await fetch('/api/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(subscription)
+            });
+
+            setPushEnabled(true);
+            setToastMessage('Push notifications enabled');
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 3000);
+        } catch (e) {
+            setError('Failed to enable push notifications');
+        }
+    };
 
     const toggleDarkMode = () => {
         setDarkMode(!darkMode);
@@ -71,6 +134,17 @@ export default function Home() {
                     totalAnalyses: prev.totalAnalyses + 1,
                     facesProcessed: prev.facesProcessed + (data.facesDetected || 0)
                 }));
+
+                // Push notification for detected emotion (top emotion of first face)
+                if (data && data.facesDetected > 0 && Array.isArray(data.results) && data.results.length > 0) {
+                    const firstFace = data.results[0];
+                    const topEmotion = Array.isArray(firstFace.emotions) && firstFace.emotions.length > 0
+                        ? firstFace.emotions[0]
+                        : null;
+                    if (topEmotion) {
+                        notifyEmotion(topEmotion);
+                    }
+                }
             } else {
                 setError(data.error || 'Failed to analyze image');
             }
@@ -78,6 +152,36 @@ export default function Home() {
             setError('Network error: ' + err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const notifyEmotion = (emotion) => {
+        const message = `Detected emotion: ${emotion.type.toLowerCase()} (${emotion.confidence}%)`;
+        // Try Web Notifications first
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+                // Use an emoji icon based on emotion
+                const emoji = emotion.type === 'HAPPY' ? '😄' :
+                    emotion.type === 'SAD' ? '😢' :
+                    emotion.type === 'ANGRY' ? '😠' :
+                    emotion.type === 'CONFUSED' ? '😕' :
+                    emotion.type === 'SURPRISED' ? '😲' :
+                    emotion.type === 'DISGUSTED' ? '🤢' :
+                    emotion.type === 'FEAR' ? '😨' : '🙂';
+                const n = new Notification('Emotion detected', { body: message, icon: '/network-detection.svg' });
+                // Optionally close after a short delay
+                setTimeout(() => n.close(), 4000);
+            } catch (e) {
+                // Fallback to in-app toast
+                setToastMessage(message);
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 4500);
+            }
+        } else {
+            // In-app toast fallback
+            setToastMessage(message);
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 4500);
         }
     };
 
@@ -110,6 +214,17 @@ export default function Home() {
             <link rel="icon" href="/network-detection.svg" />
         </Head>
         <div className={themeClasses}>
+            {/* In-app toast notification */}
+            {showToast && (
+                <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transition-all duration-300 ${
+                    darkMode ? 'bg-slate-800/90 text-white border-slate-700' : 'bg-white/90 text-slate-800 border-slate-200'
+                }`}>
+                    <div className="flex items-center space-x-2">
+                        <span>🔔</span>
+                        <span>{toastMessage}</span>
+                    </div>
+                </div>
+            )}
             {/* Banner Header */}
             <div className={`relative overflow-hidden ${darkMode ? 'banner-bg-dark' : 'banner-bg-light'}`}>
                 {/* Background Pattern */}
@@ -150,7 +265,7 @@ export default function Home() {
                             </p>
                         </div>
 
-                        {/* Dark Mode Toggle */}
+                        {/* Dark Mode Toggle and Push */}
                         <div className="flex items-center space-x-4">
                             <button
                                 onClick={toggleDarkMode}
@@ -168,6 +283,15 @@ export default function Home() {
                             <span className="text-sm font-medium text-white/90">
                                 {darkMode ? '🌙' : '☀️'}
                             </span>
+                            <button
+                                onClick={enablePush}
+                                disabled={pushEnabled}
+                                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all duration-300 ${
+                                    darkMode ? 'bg-slate-800/60 text-white border border-slate-600' : 'bg-white/70 text-slate-800 border border-slate-200'
+                                } ${pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                                {pushEnabled ? 'Push Enabled' : 'Enable Push'}
+                            </button>
                         </div>
                     </div>
                 </div>

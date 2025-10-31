@@ -1,4 +1,6 @@
 import AWS from 'aws-sdk';
+import webpush from 'web-push';
+import { subscriptions } from './subscriptionsStore';
 import formidable from 'formidable';
 import fs from 'fs';
 
@@ -100,6 +102,32 @@ export default async function handler(req, res) {
                 confidence: Math.round(face.Confidence * 100) / 100,
                 boundingBox: face.BoundingBox
             }));
+
+            // Send Web Push with top emotion for the first face (if configured)
+            try {
+                const publicKey = process.env.VAPID_PUBLIC_KEY;
+                const privateKey = process.env.VAPID_PRIVATE_KEY;
+                const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:admin@example.com';
+                if (publicKey && privateKey && subscriptions.length > 0) {
+                    webpush.setVapidDetails(vapidSubject, publicKey, privateKey);
+                    const firstFace = processedResults[0];
+                    const topEmotion = Array.isArray(firstFace.emotions) && firstFace.emotions.length > 0 ? firstFace.emotions[0] : null;
+                    if (topEmotion) {
+                        const payload = JSON.stringify({
+                            title: 'Emotion detected',
+                            body: `${topEmotion.type.toLowerCase()} (${topEmotion.confidence}%)`,
+                            icon: '/network-detection.svg',
+                            data: { url: '/' }
+                        });
+                        // fire-and-forget to all subscriptions
+                        await Promise.all(
+                            subscriptions.map((sub) => webpush.sendNotification(sub, payload).catch(() => null))
+                        );
+                    }
+                }
+            } catch (e) {
+                // Ignore push errors to not break API response
+            }
 
             res.status(200).json({
                 success: true,
