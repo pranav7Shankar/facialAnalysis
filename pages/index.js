@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BarChart, Bar, ResponsiveContainer, PieChart, Pie, Cell, RadialBarChart, RadialBar } from 'recharts';
 import Head from 'next/head'
+import Link from 'next/link'
 
 export default function Home() {
     const [selectedFile, setSelectedFile] = useState(null);
@@ -33,6 +34,7 @@ export default function Home() {
     const toggleDarkMode = () => {
         setDarkMode(!darkMode);
     };
+    
 
     const handleFileSelect = (event) => {
         const file = event.target.files[0];
@@ -71,17 +73,6 @@ export default function Home() {
                     totalAnalyses: prev.totalAnalyses + 1,
                     facesProcessed: prev.facesProcessed + (data.facesDetected || 0)
                 }));
-
-                // Play Spotify playlist based on top emotion of first face
-                if (data && data.facesDetected > 0 && Array.isArray(data.results) && data.results.length > 0) {
-                    const firstFace = data.results[0];
-                    const topEmotion = Array.isArray(firstFace.emotions) && firstFace.emotions.length > 0
-                        ? firstFace.emotions[0]
-                        : null;
-                    if (topEmotion) {
-                        startSpotifyPlayback(topEmotion.type);
-                    }
-                }
             } else {
                 setError(data.error || 'Failed to analyze image');
             }
@@ -114,45 +105,7 @@ export default function Home() {
         ? 'min-h-screen dashboard-bg-dark text-white'
         : 'min-h-screen dashboard-bg-light text-slate-900';
 
-    const emotionToPlaylistId = (emotionType) => {
-        const map = {
-            HAPPY: '37i9dQZF1DXdPec7aLTmlC',
-            SAD: '37i9dQZF1DWVV27DiNWxkR',
-            ANGRY: '37i9dQZF1DX76Wlfdnj7AP',
-            CONFUSED: '37i9dQZF1DX2pSTOxoPbx9',
-            SURPRISED: '37i9dQZF1DX0kbJZpiYdZl',
-            DISGUSTED: '37i9dQZF1DWT0upuUFtT7o',
-            FEAR: '37i9dQZF1DWXLeA8Omikj7',
-            CALM: '37i9dQZF1DX3PIPIT6lEg5',
-            NEUTRAL: '37i9dQZF1DX4WYpdgoIcn6'
-        };
-        return map[emotionType] || map['NEUTRAL'];
-    };
-
-    const startSpotifyPlayback = async (emotionType) => {
-        const playlistId = emotionToPlaylistId(emotionType);
-        try {
-            const res = await fetch('/api/spotify/play', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ playlistId })
-            });
-            if (res.status === 401) {
-                // Not authorized with Spotify: redirect to login
-                if (typeof window !== 'undefined') window.location.href = '/api/spotify/login';
-                return;
-            }
-            if (res.status === 404) {
-                setError('Open Spotify on one of your devices, then try again.');
-            } else if (res.status === 403) {
-                setError('Spotify Premium is required to start playback via the web.');
-            } else if (!res.ok) {
-                setError('Failed to start Spotify playback');
-            }
-        } catch (e) {
-            setError('Failed to start Spotify playback');
-        }
-    };
+    
 
     return (
         <>
@@ -219,6 +172,9 @@ export default function Home() {
                             <span className="text-sm font-medium text-white/90">
                                 {darkMode ? '🌙' : '☀️'}
                             </span>
+                            <Link href="/kiosk" className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white rounded-lg font-semibold transition-all shadow-lg text-sm">
+                                📸 Attendance Kiosk
+                            </Link>
                         </div>
                     </div>
                 </div>
