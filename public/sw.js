@@ -18,6 +18,12 @@ self.addEventListener('push', (event) => {
             icon: data.icon || '/network-detection.svg',
             badge: data.badge || '/network-detection.svg',
             data: data.data || {},
+            tag: data.tag || 'emotion-detected',
+            renotify: data.renotify !== undefined ? data.renotify : true,
+            requireInteraction: data.requireInteraction !== undefined ? data.requireInteraction : false,
+            vibrate: data.vibrate || [200, 100, 200],
+            timestamp: data.timestamp || Date.now(),
+            actions: data.actions || []
         };
         event.waitUntil(self.registration.showNotification(title, options));
     } catch (e) {
