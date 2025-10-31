@@ -10,9 +10,6 @@ export default function Home() {
     const [error, setError] = useState(null);
     const [darkMode, setDarkMode] = useState(false);
     const [showTips, setShowTips] = useState(false);
-    const [toastMessage, setToastMessage] = useState('');
-    const [showToast, setShowToast] = useState(false);
-    const [pushEnabled, setPushEnabled] = useState(false);
     const [stats, setStats] = useState({
         totalAnalyses: 2847,
         accuracyRate: 96.2,
@@ -32,66 +29,6 @@ export default function Home() {
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
     }, [darkMode]);
-
-    // Ask for Notification permission on mount (best-effort)
-    useEffect(() => {
-        if (typeof window !== 'undefined' && 'Notification' in window) {
-            if (Notification.permission === 'default') {
-                Notification.requestPermission().catch(() => {});
-            }
-        }
-    }, []);
-
-    // Register service worker (best-effort)
-    useEffect(() => {
-        if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js').catch(() => {});
-        }
-    }, []);
-
-    const urlBase64ToUint8Array = (base64String) => {
-        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-        const rawData = typeof window !== 'undefined' ? window.atob(base64) : '';
-        const outputArray = new Uint8Array(rawData.length);
-        for (let i = 0; i < rawData.length; ++i) {
-            outputArray[i] = rawData.charCodeAt(i);
-        }
-        return outputArray;
-    };
-
-    const enablePush = async () => {
-        try {
-            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                setError('Push not supported in this browser');
-                return;
-            }
-
-            const registration = await navigator.serviceWorker.ready;
-            const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-            if (!publicKey) {
-                setError('Missing VAPID public key');
-                return;
-            }
-            const subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(publicKey)
-            });
-
-            await fetch('/api/subscribe', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(subscription)
-            });
-
-            setPushEnabled(true);
-            setToastMessage('Push notifications enabled');
-            setShowToast(true);
-            setTimeout(() => setShowToast(false), 3000);
-        } catch (e) {
-            setError('Failed to enable push notifications');
-        }
-    };
 
     const toggleDarkMode = () => {
         setDarkMode(!darkMode);
@@ -135,14 +72,14 @@ export default function Home() {
                     facesProcessed: prev.facesProcessed + (data.facesDetected || 0)
                 }));
 
-                // Push notification for detected emotion (top emotion of first face)
+                // Play Spotify playlist based on top emotion of first face
                 if (data && data.facesDetected > 0 && Array.isArray(data.results) && data.results.length > 0) {
                     const firstFace = data.results[0];
                     const topEmotion = Array.isArray(firstFace.emotions) && firstFace.emotions.length > 0
                         ? firstFace.emotions[0]
                         : null;
                     if (topEmotion) {
-                        notifyEmotion(topEmotion);
+                        startSpotifyPlayback(topEmotion.type);
                     }
                 }
             } else {
@@ -152,36 +89,6 @@ export default function Home() {
             setError('Network error: ' + err.message);
         } finally {
             setLoading(false);
-        }
-    };
-
-    const notifyEmotion = (emotion) => {
-        const message = `Detected emotion: ${emotion.type.toLowerCase()} (${emotion.confidence}%)`;
-        // Try Web Notifications first
-        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-            try {
-                // Use an emoji icon based on emotion
-                const emoji = emotion.type === 'HAPPY' ? '😄' :
-                    emotion.type === 'SAD' ? '😢' :
-                    emotion.type === 'ANGRY' ? '😠' :
-                    emotion.type === 'CONFUSED' ? '😕' :
-                    emotion.type === 'SURPRISED' ? '😲' :
-                    emotion.type === 'DISGUSTED' ? '🤢' :
-                    emotion.type === 'FEAR' ? '😨' : '🙂';
-                const n = new Notification('Emotion detected', { body: message, icon: '/network-detection.svg' });
-                // Optionally close after a short delay
-                setTimeout(() => n.close(), 4000);
-            } catch (e) {
-                // Fallback to in-app toast
-                setToastMessage(message);
-                setShowToast(true);
-                setTimeout(() => setShowToast(false), 4500);
-            }
-        } else {
-            // In-app toast fallback
-            setToastMessage(message);
-            setShowToast(true);
-            setTimeout(() => setShowToast(false), 4500);
         }
     };
 
@@ -207,6 +114,46 @@ export default function Home() {
         ? 'min-h-screen dashboard-bg-dark text-white'
         : 'min-h-screen dashboard-bg-light text-slate-900';
 
+    const emotionToPlaylistId = (emotionType) => {
+        const map = {
+            HAPPY: '37i9dQZF1DXdPec7aLTmlC',
+            SAD: '37i9dQZF1DWVV27DiNWxkR',
+            ANGRY: '37i9dQZF1DX76Wlfdnj7AP',
+            CONFUSED: '37i9dQZF1DX2pSTOxoPbx9',
+            SURPRISED: '37i9dQZF1DX0kbJZpiYdZl',
+            DISGUSTED: '37i9dQZF1DWT0upuUFtT7o',
+            FEAR: '37i9dQZF1DWXLeA8Omikj7',
+            CALM: '37i9dQZF1DX3PIPIT6lEg5',
+            NEUTRAL: '37i9dQZF1DX4WYpdgoIcn6'
+        };
+        return map[emotionType] || map['NEUTRAL'];
+    };
+
+    const startSpotifyPlayback = async (emotionType) => {
+        const playlistId = emotionToPlaylistId(emotionType);
+        try {
+            const res = await fetch('/api/spotify/play', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ playlistId })
+            });
+            if (res.status === 401) {
+                // Not authorized with Spotify: redirect to login
+                if (typeof window !== 'undefined') window.location.href = '/api/spotify/login';
+                return;
+            }
+            if (res.status === 404) {
+                setError('Open Spotify on one of your devices, then try again.');
+            } else if (res.status === 403) {
+                setError('Spotify Premium is required to start playback via the web.');
+            } else if (!res.ok) {
+                setError('Failed to start Spotify playback');
+            }
+        } catch (e) {
+            setError('Failed to start Spotify playback');
+        }
+    };
+
     return (
         <>
         <Head>
@@ -214,17 +161,6 @@ export default function Home() {
             <link rel="icon" href="/network-detection.svg" />
         </Head>
         <div className={themeClasses}>
-            {/* In-app toast notification */}
-            {showToast && (
-                <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 z-50 px-4 py-3 rounded-xl shadow-lg border text-sm font-medium transition-all duration-300 ${
-                    darkMode ? 'bg-slate-800/90 text-white border-slate-700' : 'bg-white/90 text-slate-800 border-slate-200'
-                }`}>
-                    <div className="flex items-center space-x-2">
-                        <span>🔔</span>
-                        <span>{toastMessage}</span>
-                    </div>
-                </div>
-            )}
             {/* Banner Header */}
             <div className={`relative overflow-hidden ${darkMode ? 'banner-bg-dark' : 'banner-bg-light'}`}>
                 {/* Background Pattern */}
@@ -265,7 +201,7 @@ export default function Home() {
                             </p>
                         </div>
 
-                        {/* Dark Mode Toggle and Push */}
+                        {/* Dark Mode Toggle */}
                         <div className="flex items-center space-x-4">
                             <button
                                 onClick={toggleDarkMode}
@@ -283,15 +219,6 @@ export default function Home() {
                             <span className="text-sm font-medium text-white/90">
                                 {darkMode ? '🌙' : '☀️'}
                             </span>
-                            <button
-                                onClick={enablePush}
-                                disabled={pushEnabled}
-                                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all duration-300 ${
-                                    darkMode ? 'bg-slate-800/60 text-white border border-slate-600' : 'bg-white/70 text-slate-800 border border-slate-200'
-                                } ${pushEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-                            >
-                                {pushEnabled ? 'Push Enabled' : 'Enable Push'}
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -342,7 +269,7 @@ export default function Home() {
                                                 className="inline-flex items-center btn-primary cursor-pointer"
                                             >
                                                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2-2V9z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                                                 </svg>
                                                 Choose Image
@@ -353,19 +280,19 @@ export default function Home() {
                                     <div className="grid grid-cols-3 gap-4 mt-6">
                                         <div className="feature-card">
                                             <div className="text-2xl mb-1">⚡</div>
-                                            <div className={`text-xs font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                            <div className={`${darkMode ? 'text-slate-300' : 'text-slate-600'} text-xs font-medium`}>
                                                 Fast Analysis
                                             </div>
                                         </div>
                                         <div className="feature-card">
                                             <div className="text-2xl mb-1">🎯</div>
-                                            <div className={`text-xs font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                            <div className={`${darkMode ? 'text-slate-300' : 'text-slate-600'} text-xs font-medium`}>
                                                 High Accuracy
                                             </div>
                                         </div>
                                         <div className="feature-card">
                                             <div className="text-2xl mb-1">🔒</div>
-                                            <div className={`text-xs font-medium ${darkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                            <div className={`${darkMode ? 'text-slate-300' : 'text-slate-600'} text-xs font-medium`}>
                                                 Privacy First
                                             </div>
                                         </div>
