@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 
 export default function AttendanceKiosk() {
     const [darkMode, setDarkMode] = useState(false);
@@ -189,12 +190,17 @@ export default function AttendanceKiosk() {
                                 </p>
                             </div>
                         </div>
-                        <button
-                            onClick={() => setDarkMode(!darkMode)}
-                            className={`px-4 py-2 rounded-lg ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} transition-colors`}
-                        >
-                            {darkMode ? '🌙' : '☀️'}
-                        </button>
+                        <div className="flex items-center space-x-2">
+                            <Link href="/hr/login" className={`px-3 py-2 rounded-lg text-white transition-colors bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-700 hover:to-slate-800`}>
+                                🔐 HR Login
+                            </Link>
+                            <button
+                                onClick={() => setDarkMode(!darkMode)}
+                                className={`px-4 py-2 rounded-lg ${darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} transition-colors`}
+                            >
+                                {darkMode ? '🌙' : '☀️'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
